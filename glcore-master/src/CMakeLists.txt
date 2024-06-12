@@ -1,0 +1,6 @@
+file(GLOB SOURCES *.cpp *.h)
+# find_package(OpenGL REQUIRED)
+add_library(glcore ${SOURCES})
+target_link_libraries(glcore PUBLIC glfw glad glm stb imgui)
+target_link_libraries(imgui PRIVATE glfw)
+target_include_directories(glcore PUBLIC "${PROJECT_SOURCE_DIR}/include")
