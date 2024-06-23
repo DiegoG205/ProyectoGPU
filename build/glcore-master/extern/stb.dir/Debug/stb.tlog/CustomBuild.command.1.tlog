@@ -1,0 +1,10 @@
+^D:\DGE20\DOCUMENTOS\RAMOSUNIVERSIDAD\9NOSEMESTRE\GPU\REPOPROYECTO\GLCORE-MASTER\EXTERN\CMAKELISTS.TXT
+setlocal
+D:\mingw64\bin\cmake.exe -SD:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto -BD:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto/build --check-stamp-file D:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto/build/glcore-master/extern/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

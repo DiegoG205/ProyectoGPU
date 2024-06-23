@@ -1,0 +1,10 @@
+^D:\DGE20\DOCUMENTOS\RAMOSUNIVERSIDAD\9NOSEMESTRE\GPU\REPOPROYECTO\BUILD\CMAKEFILES\47FAD0564D782B876CD8E9E652E69C09\GENERATE.STAMP.RULE
+setlocal
+D:\mingw64\bin\cmake.exe -SD:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto -BD:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto/build/cuda-opengl.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

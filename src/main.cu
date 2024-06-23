@@ -8,37 +8,100 @@
 #include <memory>
 #include <vector>
 
-#define N 10
+#include <cuda_runtime.h>
+#include <cuda_gl_interop.h>
+#include <vector_types.h>
+
+#include "fluid_sim.cu"
+
+#define N 256
 
 using std::make_unique;
 using std::unique_ptr;
 using std::vector;
+
+class CudaBuffer : public VertexBuffer {
+  public:
+    struct cudaGraphicsResource *VBO;
+    int size;
+
+    CudaBuffer(int n) {
+
+      glGenVertexArrays(1, &vao_);
+      glGenBuffers(1, &vbo_);
+      
+      size = n;
+    };
+
+    void build() override {
+      bind();
+      glBufferData(GL_ARRAY_BUFFER, 3* sizeof(float) * size,
+                  nullptr, GL_DYNAMIC_DRAW);
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+      glEnableVertexAttribArray(0);
+      cudaGraphicsGLRegisterBuffer(&VBO, vbo_, cudaGraphicsMapFlagsWriteDiscard);
+    };
+
+    void draw() override {
+      bind();
+      glDrawArrays(GL_POINTS, 0, size);
+    }
+};
+
 
 class FluidApp : public App {
 public:
   unique_ptr<Shader> shader;
   unique_ptr<Camera> cam;
   unique_ptr<Buffer> quad;
+  unique_ptr<CudaBuffer> particles;
   glm::mat4 projection;
+
+  float3 *velDev;
+  float3 *auxPosDev;
+  float3 *auxVelDev;
+  float *densDev;
+
   struct {
     float xmouse, ymouse;
-    bool showMenu = false;
+    bool showMenu = true;
+    bool stop = true;
     float speed = 1.0f;
-    //Ball *target = nullptr;
+
+    float sRadius = 3.f;
+    float dt = 0.01f;
+
+    float targetDensity = 0.5f;
+    float PressureMultiplier = 0.5f;
+
   } settings;
 
-  FluidApp() : App(3, 3, 800, 600, "Fluid Simulation"), projection(1.0f) {
+  FluidApp() : App(3, 3, 1000, 1000, "Fluid Simulation"), projection(1.0f) {
 
     // Crear datos partículas
 
-    vector<float> qv{1.0f,  1.0f,  0.0f, 1.0f,  -1.0f, 0.0f,
-                     -1.0f, -1.0f, 0.0f, -1.0f, 1.0f,  0.0f};
+    std::size_t size = sizeof(float3) * N;
+
+    cudaMalloc(&auxPosDev, size);
+    cudaMalloc(&velDev, size);
+    cudaMalloc(&auxVelDev, size);
+    cudaMalloc(&densDev, sizeof(float)*N);
+
+    createData(auxPosDev, auxVelDev);
+
+    particles = make_unique<CudaBuffer>(N);
+    particles->build();
+
+    vector<float> qv{20.0f,  20.0f,  0.0f, 20.0f,  -20.0f, 0.0f,
+                     -20.0f, -20.0f, 0.0f, -20.0f, 20.0f,  0.0f};
     vector<unsigned int> qi{0, 1, 2, 2, 3, 0};
     quad = make_unique<BasicBuffer>(qv, qi);
     quad->build();
-    shader = make_unique<Shader>(SHADER_PATH "vertex.glsl",
-                                 SHADER_PATH "fragment.glsl");
+
+    shader = make_unique<Shader>(SHADER_PATH "vertex.glsl", SHADER_PATH "fragment.glsl");
     cam = make_unique<Camera>(glm::vec3(0.f, 0.f, 3.f), 1.f, -90.f);
+
+    glEnable( GL_PROGRAM_POINT_SIZE );
   }
 
   void render() override {
@@ -48,111 +111,76 @@ public:
       show_main_menu();
     }
 
-    // if (settings.target) {
-    //   ImGui::Begin("Información"); // Create a window called "Hello,
-    //                                // world!" and append into it.
-    //   ImGui::Text("Pelota en (%.2f, %.2f)", settings.target->position.x,
-    //               settings.target->position.y);
-    //   ImGui::SliderFloat("Radio", &settings.target->radius, 0.01f, 0.5f);
-    //   ImGui::SliderFloat("Mass", &settings.target->mass, 0.1f, 1.0f);
-    //   ImGui::ColorPicker3(
-    //       "Color",
-    //       glm::value_ptr(
-    //           settings.target->color)); // Edit 3 floats representing a color
-
-    //   ImGui::End();
-    // }
-
     shader->use();
     glm::mat4 view = cam->view();
     shader->set("view", cam->view());
     float aspect = (float)width_ / (float)height_;
-    projection = glm::ortho(-aspect, aspect, -1.0f, 1.0f, 0.1f, 100.0f);
-    // glm::perspective(glm::radians(cam->zoom),
-    //                  ((float)width_) / ((float)height_), 0.1f, 100.0f);
+    projection = glm::ortho(-20.f, 20.f, -20.0f, 20.0f, 0.1f, 100.0f);
     shader->set("projection", projection);
-    shader->set("outline", 0);
 
     shader->set("model", glm::mat4(1.0f));
     shader->set("color", glm::vec3(0.1f, 0.12f, 0.12f));
     quad->draw();
 
-    // if (settings.target) {
-    //   shader->set("model", settings.target->model());
-    //   shader->set("color", {1.f, 1.f, 1.f});
-    //   shader->set("outline", 1);
-    //   settings.target->draw();
-    //   shader->set("outline", 0);
-    // }
-
-    // for (auto &b : balls) {
-    //   shader->set("model", b.model());
-    //   shader->set("color", b.color);
-    //   b.draw();
-    // }
+    shader->set("color", glm::vec3(1.f,1.f,1.f));
+    particles->draw();
   }
 
   void update(float deltaTime) override {
     deltaTime *= settings.speed;
-    if (settings.showMenu)
+    if (settings.stop)
       return;
 
-    // collisions
-    // for (int i = 0; i < balls.size(); i++) {
-    //   for (int j = i + 1; j < balls.size(); j++) {
-    //     auto &b1 = balls[i];
-    //     auto &b2 = balls[j];
-    //     if (b1.check(b2)) {
-    //       auto collision = b1.position - b2.position;
-    //       float distance = glm::length(collision);
-    //       glm::vec3 plane = collision / distance;
-    //       float b1i = glm::dot(b1.velocity, plane);
-    //       float b2i = glm::dot(b2.velocity, plane);
+    runCuda(&(particles->VBO), velDev, auxPosDev, auxVelDev);
+  }
 
-    //       float b1f = b2i;
-    //       float b2f = b1i;
+  void createData(float3 *auxPos, float3 *auxVel) {
 
-    //       b1.velocity += (b1f - b1i) * plane;
-    //       b2.velocity += (b2f - b2i) * plane;
+  float3 auxP[N];
+  float3 auxV[N];
 
-    //       // position correction
-    //       float delta = b1.radius + b2.radius - distance;
-    //       b1.position += 0.5f * delta * plane;
-    //       b2.position -= 0.5f * delta * plane;
-    //     }
-    //   }
-    // }
+  int rowSize = (int)std::sqrt(N);
+  int colSize = (N - 1) / rowSize + 1;
+  float size = 18.f;
 
-    // wall collisions
-    // for (auto &b : balls) {
-    //   if (b.position.x - b.radius < -1.0) {
-    //     b.velocity.x *= -1;
-    //     float delta = b.position.x - b.radius + 1.0;
-    //     b.position.x -= delta;
-    //   }
+  for (int i = 0; i < colSize; i++) {
+    for(int j = 0; j < rowSize; j++) {
+      if (i*rowSize + j >= N) break;
+      auxP[i*rowSize + j].x = j * size/rowSize - size/2;
+      auxP[i*rowSize + j].y = i * size/colSize - size/2;
+      auxP[i*rowSize + j].z = 0;
+      auxV[i*rowSize + j] = {0,0,0};
+    }
+  }
 
-    //   if (b.position.x + b.radius > 1.0) {
-    //     b.velocity.x *= -1;
-    //     float delta = b.position.x + b.radius - 1.0;
-    //     b.position.x -= delta;
-    //   }
+  cudaMemcpy(auxPos, auxP, N*sizeof(float3), cudaMemcpyHostToDevice);
+  cudaMemcpy(auxVel, auxV, N*sizeof(float3), cudaMemcpyHostToDevice);
+};
 
-    //   if (b.position.y - b.radius < -1.0) {
-    //     b.velocity.y *= -1;
-    //     float delta = b.position.y - b.radius + 1.0;
-    //     b.position.y -= delta;
-    //   }
-    //   if (b.position.y + b.radius > 1.0) {
-    //     b.velocity.y *= -1;
-    //     float delta = b.position.y + b.radius - 1.0;
-    //     b.position.y -= delta;
-    //   }
-    // }
+  void runCuda(struct cudaGraphicsResource **cudaVBOResourcePointer, float3 *velDev, float3 *auxPos, float3 *auxVel) {
+    // Map OpenGL buffer object for writing from CUDA
+    float3 *dptr;
+    cudaGraphicsMapResources(1, cudaVBOResourcePointer, 0);
+    size_t numBytes;
+    cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *cudaVBOResourcePointer);
 
-    // movement
-    // for (auto &b : balls) {
-    //   b.position += b.velocity * deltaTime;
-    // }
+    // Block size
+    int blockSize = 64;
+
+    // Round up in case N is not a multiple of blockSize
+    int numBlocks = (N + blockSize - 1) / blockSize;
+
+    // Execute the kernel
+    cudaMemcpy(dptr, auxPos, N*sizeof(float3), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(velDev, auxVel, N*sizeof(float3), cudaMemcpyDeviceToDevice);
+
+    //std::cout << "Start kernel\n";
+    updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius);
+    fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxPos, velDev, auxVel, densDev, settings.dt, 
+                                          settings.sRadius, settings.targetDensity, settings.PressureMultiplier);
+
+    // Unmap buffer object
+    cudaGraphicsUnmapResources(1, cudaVBOResourcePointer, 0);
   }
 
   void show_main_menu() {
@@ -161,19 +189,32 @@ public:
                                        ImGuiWindowFlags_NoSavedSettings;
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(viewport->Size);
-    if (ImGui::Begin("Pausa", NULL, flags)) {
-      ImGui::Text("Menu de Pausa");
-      ImGui::SliderFloat("Simulation Speed", &settings.speed, 0.1f, 2.0f);
-      if (ImGui::Button("Salir"))
-        glfwSetWindowShouldClose(window, 1);
+    ImGui::SetNextWindowSize(ImVec2(viewport->Size.x/3, viewport->Size.y/3));
+    if (ImGui::Begin("Opciones", NULL, flags)) {
+      ImGui::Text("Opciones");
+      ImGui::SliderFloat("Target Density", &settings.targetDensity, 0, 2.f);
+      ImGui::SliderFloat("Pressure Multiplier", &settings.PressureMultiplier, 0, 100.f);
+      ImGui::SliderFloat("Smoothing Radius", &settings.sRadius, 1.f, 4.f);
+      ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.2f);
+      ImGui::Checkbox("Stop", &settings.stop);
     }
     ImGui::End();
   }
 
   void key_callback(int key, int scancode, int action, int mods) override {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-      settings.showMenu = !settings.showMenu;
+    // if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+    //   settings.showMenu = !settings.showMenu;
+    // }
+    if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+      settings.stop = !settings.stop;
+    }
+    if (key == GLFW_KEY_O && action == GLFW_PRESS) {
+      settings.sRadius += 0.5f;
+      std::cout << "New radius: " << settings.sRadius << "\n";
+    }
+    if (key == GLFW_KEY_I && action == GLFW_PRESS) {
+      settings.sRadius -= 0.5f;
+      std::cout << "New radius: " << settings.sRadius << "\n";
     }
   }
 
@@ -196,11 +237,30 @@ public:
       glm::vec4 pos(x, y, 0.0f, 1.0f);
       glm::mat4 toWorld = glm::inverse(projection * cam->view());
       glm::vec4 realPos = toWorld * pos;
-    //   for (auto &b : balls) {
-    //     if (b.check(realPos)) {
-    //       settings.target = &b;
-    //     }
-    //   }
+      float3 p = {realPos.x, realPos.y, 0};
+      float3 *dptr;
+      size_t numBytes;
+      cudaGraphicsMapResources(1, &(particles->VBO), 0);
+      cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *&(particles->VBO));
+      
+      float3 auxP[N];
+      cudaMemcpy(auxP, dptr, N*sizeof(float3), cudaMemcpyDeviceToHost);
+      //for (int i = 0; i < N; i++) std::cout << auxP[i].x << " " << auxP[i].y << " " << auxP[i].z << "\n";
+      float res = calculateDensityHost(N, p, auxP, settings.sRadius);
+      std::cout << res << "\n";
+      cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
+    }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
+      // from viewport to world
+      float3 *dptr;
+      size_t numBytes;
+      cudaGraphicsMapResources(1, &(particles->VBO), 0);
+      cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *&(particles->VBO));
+      
+      float3 auxP[N];
+      cudaMemcpy(auxP, dptr, N*sizeof(float3), cudaMemcpyDeviceToHost);
+      for (int i = 0; i < N; i++) std::cout << i << ": " << auxP[i].x << " " << auxP[i].y << " " << auxP[i].z << "\n";
+      cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
     }
   }
 };

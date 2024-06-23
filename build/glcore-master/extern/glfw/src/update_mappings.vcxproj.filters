@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\dge20\Documentos\RamosUniversidad\9noSemestre\GPU\RepoProyecto\build\CMakeFiles\cc01a448013d668387fd065e14161f0f\update_mappings.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\dge20\Documentos\RamosUniversidad\9noSemestre\GPU\RepoProyecto\glcore-master\extern\glfw\src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="D:\dge20\Documentos\RamosUniversidad\9noSemestre\GPU\RepoProyecto\glcore-master\extern\glfw\src\mappings.h.in">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="D:\dge20\Documentos\RamosUniversidad\9noSemestre\GPU\RepoProyecto\glcore-master\extern\glfw\CMake\GenerateMappings.cmake" />
+    <None Include="D:\dge20\Documentos\RamosUniversidad\9noSemestre\GPU\RepoProyecto\build\glcore-master\extern\glfw\src\CMakeFiles\update_mappings" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{3BA97572-631D-397B-BE29-489792C975FE}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{8232D78E-9D51-3E34-9338-3D3E4F6F150D}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

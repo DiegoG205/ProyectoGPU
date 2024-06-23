@@ -1,0 +1,24 @@
+^D:\DGE20\DOCUMENTOS\RAMOSUNIVERSIDAD\9NOSEMESTRE\GPU\REPOPROYECTO\BUILD\CMAKEFILES\037FCD63D87E08EF94498D9D758F31F7\DOCS.RULE
+setlocal
+cd D:\dge20\Documentos\RamosUniversidad\9noSemestre\GPU\RepoProyecto\build\glcore-master\extern\glfw\docs
+if %errorlevel% neq 0 goto :cmEnd
+D:
+if %errorlevel% neq 0 goto :cmEnd
+D:\mingw64\bin\doxygen.exe
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^D:\DGE20\DOCUMENTOS\RAMOSUNIVERSIDAD\9NOSEMESTRE\GPU\REPOPROYECTO\GLCORE-MASTER\EXTERN\GLFW\DOCS\CMAKELISTS.TXT
+setlocal
+D:\mingw64\bin\cmake.exe -SD:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto -BD:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto/build --check-stamp-file D:/dge20/Documentos/RamosUniversidad/9noSemestre/GPU/RepoProyecto/build/glcore-master/extern/glfw/docs/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
