@@ -14,7 +14,7 @@
 
 #include "fluid_sim.cu"
 
-#define N 256
+#define N 64
 
 using std::make_unique;
 using std::unique_ptr;
@@ -59,14 +59,14 @@ public:
 
   float3 *velDev;
   float3 *auxPosDev;
-  float3 *auxVelDev;
+  float3 *auxVelDev; // Creo que se puede borrar
   float *densDev;
 
   struct {
     float xmouse, ymouse;
     bool showMenu = true;
     bool stop = true;
-    float speed = 1.0f;
+    float speed = 1.0f; // Creo que se puede borrar
 
     float sRadius = 3.f;
     float dt = 0.01f;
@@ -127,7 +127,7 @@ public:
   }
 
   void update(float deltaTime) override {
-    deltaTime *= settings.speed;
+    //deltaTime *= settings.speed;
     if (settings.stop)
       return;
 
@@ -195,16 +195,16 @@ public:
       ImGui::SliderFloat("Target Density", &settings.targetDensity, 0, 2.f);
       ImGui::SliderFloat("Pressure Multiplier", &settings.PressureMultiplier, 0, 100.f);
       ImGui::SliderFloat("Smoothing Radius", &settings.sRadius, 1.f, 4.f);
-      ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.2f);
+      ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.02f);
       ImGui::Checkbox("Stop", &settings.stop);
     }
     ImGui::End();
   }
 
   void key_callback(int key, int scancode, int action, int mods) override {
-    // if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-    //   settings.showMenu = !settings.showMenu;
-    // }
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+      settings.showMenu = !settings.showMenu;
+    }
     if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
       settings.stop = !settings.stop;
     }

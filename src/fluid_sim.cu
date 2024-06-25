@@ -66,7 +66,7 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* positions, float*
     float dx = pos.x - other.x;
     float dy = pos.y - other.y;
     float dz = pos.z - other.z;
-    float dist = std::sqrt(dx*dx + dy*dy + dz*dz + 0.01);
+    float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
     float3 dir = {-dx/dist, -dy/dist, -dz/dist};
 
     float slope = smoothingKernelDerivative(radius, dist);
@@ -74,9 +74,9 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* positions, float*
     float density = densities[i];
     float val = densityToPressure(density, trgDen, pressMult) * slope * mass / density;
 
-    pressure.x += -dir.x * val;
-    pressure.y += -dir.y * val;
-    pressure.z += -dir.z * val;
+    pressure.x -= dir.x * val;
+    pressure.y -= dir.y * val;
+    pressure.z -= dir.z * val;
   }
 
   return pressure;
@@ -85,7 +85,7 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* positions, float*
 __global__ void updateDensities(int n, float3 *posData, float *densities, float radius) {
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
   densities[index] = calculateDensity(n, posData[index], posData, radius);
-  printf("%d: %f\n", index, densities[index]);
+  //printf("%d: %f\n", index, densities[index]);
 };
 
 // TODO: Revisar si es seguro eliminar velAux (cada particula accede solo a su velocidad => no hay datarace)
