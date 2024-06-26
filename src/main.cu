@@ -35,10 +35,13 @@ class CudaBuffer : public VertexBuffer {
 
     void build() override {
       bind();
-      glBufferData(GL_ARRAY_BUFFER, 3* sizeof(float) * size,
+      glBufferData(GL_ARRAY_BUFFER, 6* sizeof(float) * size,
                   nullptr, GL_DYNAMIC_DRAW);
-      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
       glEnableVertexAttribArray(0);
+      glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+      glEnableVertexAttribArray(1);
+
       cudaGraphicsGLRegisterBuffer(&VBO, vbo_, cudaGraphicsMapFlagsWriteDiscard);
     };
 
@@ -57,16 +60,13 @@ public:
   unique_ptr<CudaBuffer> particles;
   glm::mat4 projection;
 
-  float3 *velDev;
-  float3 *auxPosDev;
-  float3 *auxVelDev; // Creo que se puede borrar
+  float3 *auxDev;
   float *densDev;
 
   struct {
     float xmouse, ymouse;
     bool showMenu = true;
     bool stop = true;
-    float speed = 1.0f; // Creo que se puede borrar
 
     float sRadius = 3.f;
     float dt = 0.01f;
@@ -80,20 +80,20 @@ public:
 
     // Crear datos partículas
 
-    std::size_t size = sizeof(float3) * N;
+    std::size_t size = 2 * sizeof(float3) * N;
 
-    cudaMalloc(&auxPosDev, size);
-    cudaMalloc(&velDev, size);
-    cudaMalloc(&auxVelDev, size);
+    cudaMalloc(&auxDev, size);
     cudaMalloc(&densDev, sizeof(float)*N);
 
-    createData(auxPosDev, auxVelDev);
+    createData(auxDev);
 
     particles = make_unique<CudaBuffer>(N);
     particles->build();
 
-    vector<float> qv{20.0f,  20.0f,  0.0f, 20.0f,  -20.0f, 0.0f,
-                     -20.0f, -20.0f, 0.0f, -20.0f, 20.0f,  0.0f};
+    vector<float> qv{20.0f,  20.0f,  0.0f, 1.0f, 1.0f, 1.0f,
+                     20.0f,  -20.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+                     -20.0f, -20.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+                     -20.0f, 20.0f,  0.0f, 1.0f, 1.0f, 1.0f};
     vector<unsigned int> qi{0, 1, 2, 2, 3, 0};
     quad = make_unique<BasicBuffer>(qv, qi);
     quad->build();
@@ -106,6 +106,8 @@ public:
 
   void render() override {
     App::render();
+    glClearColor(0.7, 0.7, 0.7, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glDisable(GL_DEPTH_TEST); // solo 2D
     if (settings.showMenu) {
       show_main_menu();
@@ -120,9 +122,9 @@ public:
 
     shader->set("model", glm::mat4(1.0f));
     shader->set("color", glm::vec3(0.1f, 0.12f, 0.12f));
-    quad->draw();
+    //quad->draw();
 
-    shader->set("color", glm::vec3(1.f,1.f,1.f));
+    shader->set("color", glm::vec3(0.f));
     particles->draw();
   }
 
@@ -131,13 +133,12 @@ public:
     if (settings.stop)
       return;
 
-    runCuda(&(particles->VBO), velDev, auxPosDev, auxVelDev);
+    runCuda(&(particles->VBO), auxDev);
   }
 
-  void createData(float3 *auxPos, float3 *auxVel) {
+  void createData(float3 *auxDev) {
 
-  float3 auxP[N];
-  float3 auxV[N];
+  float3 aux[2*N];
 
   int rowSize = (int)std::sqrt(N);
   int colSize = (N - 1) / rowSize + 1;
@@ -145,19 +146,20 @@ public:
 
   for (int i = 0; i < colSize; i++) {
     for(int j = 0; j < rowSize; j++) {
-      if (i*rowSize + j >= N) break;
-      auxP[i*rowSize + j].x = j * size/rowSize - size/2;
-      auxP[i*rowSize + j].y = i * size/colSize - size/2;
-      auxP[i*rowSize + j].z = 0;
-      auxV[i*rowSize + j] = {0,0,0};
+      int index = i*rowSize + j;
+      std::cout << index << "\n";
+      if (index >= N) break;
+      aux[2*index].x = j * size/rowSize - size/2;
+      aux[2*index].y = i * size/colSize - size/2;
+      aux[2*index].z = 0;
+      aux[2*index + 1] = {0,0,0};
     }
   }
-
-  cudaMemcpy(auxPos, auxP, N*sizeof(float3), cudaMemcpyHostToDevice);
-  cudaMemcpy(auxVel, auxV, N*sizeof(float3), cudaMemcpyHostToDevice);
+  //for(int i = 0; i < N; i++) std::cout << aux[2*i].x << " " << aux[2*i].y << " " << aux[2*i].z << "\n" << aux[2*i+1].x << " " << aux[2*i+1].y << " " << aux[2*i+1].z << "\n";
+  cudaMemcpy(auxDev, aux, 2*N*sizeof(float3), cudaMemcpyHostToDevice);
 };
 
-  void runCuda(struct cudaGraphicsResource **cudaVBOResourcePointer, float3 *velDev, float3 *auxPos, float3 *auxVel) {
+  void runCuda(struct cudaGraphicsResource **cudaVBOResourcePointer, float3 *auxDev) {
     // Map OpenGL buffer object for writing from CUDA
     float3 *dptr;
     cudaGraphicsMapResources(1, cudaVBOResourcePointer, 0);
@@ -171,12 +173,11 @@ public:
     int numBlocks = (N + blockSize - 1) / blockSize;
 
     // Execute the kernel
-    cudaMemcpy(dptr, auxPos, N*sizeof(float3), cudaMemcpyDeviceToDevice);
-    cudaMemcpy(velDev, auxVel, N*sizeof(float3), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(dptr, auxDev, 2*N*sizeof(float3), cudaMemcpyDeviceToDevice);
 
     //std::cout << "Start kernel\n";
     updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius);
-    fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxPos, velDev, auxVel, densDev, settings.dt, 
+    fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, settings.dt, 
                                           settings.sRadius, settings.targetDensity, settings.PressureMultiplier);
 
     // Unmap buffer object

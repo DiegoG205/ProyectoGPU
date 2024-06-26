@@ -31,7 +31,7 @@ __device__ float calculateDensity(int n, float3 pos, float3* positions, float ra
 
   for (int i = 0; i < n; i++) {
     
-    float3 other = positions[i];
+    float3 other = positions[2*i];
 
     float dx = pos.x - other.x;
     float dy = pos.y - other.y;
@@ -61,7 +61,7 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* positions, float*
     
     if (i == index) continue;
 
-    float3 other = positions[i];
+    float3 other = positions[2*i];
 
     float dx = pos.x - other.x;
     float dy = pos.y - other.y;
@@ -89,20 +89,20 @@ __global__ void updateDensities(int n, float3 *posData, float *densities, float 
 };
 
 // TODO: Revisar si es seguro eliminar velAux (cada particula accede solo a su velocidad => no hay datarace)
-__global__ void fluid_kernel(int n, float3 *posData, float3* posAux, float3 *velData, float3 *velAux, float *densities, float dt, 
+__global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densities, float dt, 
                              float radius, float trgDen, float pressMult) {
 
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
 
 
-  float3 pos = posData[index];
-  float3 vel = velData[index];
+  float3 pos = data[2*index];
+  float3 vel = data[2*index + 1];
 
   // Gravity
-  //vel.y -= 9.8 * dt;
+  // vel.y -= 9.8 * dt;
 
   // Pressure force
-  float3 pressure = calculatePressure(n, pos, posData, densities, radius, trgDen, pressMult);
+  float3 pressure = calculatePressure(n, pos, data, densities, radius, trgDen, pressMult);
   float3 pressureAcc = {pressure.x / densities[index], pressure.y / densities[index], pressure.z / densities[index]};
 
   // TODO: sumar la aceleracion, no asignarla directamente
@@ -118,8 +118,8 @@ __global__ void fluid_kernel(int n, float3 *posData, float3* posAux, float3 *vel
   pos.y += vel.y * dt;
   pos.z += vel.z * dt;
 
-  posAux[index] = pos;
-  velAux[index] = vel;
+  dataAux[2*index] = pos;
+  dataAux[2*index + 1] = vel;
 
 };
 
@@ -131,7 +131,7 @@ float calculateDensityHost(int n, float3 pos, float3* positions, float radius) {
 
   for (int i = 0; i < n; i++) {
 
-    float3 other = positions[i];
+    float3 other = positions[2*i];
 
     float dx = pos.x - other.x;
     float dy = pos.y - other.y;
