@@ -14,7 +14,7 @@
 
 #include "fluid_sim.cu"
 
-#define N 64
+#define N 256
 
 using std::make_unique;
 using std::unique_ptr;
@@ -244,8 +244,8 @@ public:
       cudaGraphicsMapResources(1, &(particles->VBO), 0);
       cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *&(particles->VBO));
       
-      float3 auxP[N];
-      cudaMemcpy(auxP, dptr, N*sizeof(float3), cudaMemcpyDeviceToHost);
+      float3 auxP[2*N];
+      cudaMemcpy(auxP, dptr, 2*N*sizeof(float3), cudaMemcpyDeviceToHost);
       //for (int i = 0; i < N; i++) std::cout << auxP[i].x << " " << auxP[i].y << " " << auxP[i].z << "\n";
       float res = calculateDensityHost(N, p, auxP, settings.sRadius);
       std::cout << res << "\n";
@@ -258,8 +258,8 @@ public:
       cudaGraphicsMapResources(1, &(particles->VBO), 0);
       cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *&(particles->VBO));
       
-      float3 auxP[N];
-      cudaMemcpy(auxP, dptr, N*sizeof(float3), cudaMemcpyDeviceToHost);
+      float3 auxP[2*N];
+      cudaMemcpy(auxP, dptr, 2*N*sizeof(float3), cudaMemcpyDeviceToHost);
       for (int i = 0; i < N; i++) std::cout << i << ": " << auxP[i].x << " " << auxP[i].y << " " << auxP[i].z << "\n";
       cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
     }
