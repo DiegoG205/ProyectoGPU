@@ -24,7 +24,7 @@ __device__ float smoothingKernelDerivative(float radius, float dist) {
   return value * scale;
 };
 
-__device__ float calculateDensity(int n, float3 pos, float3* positions, float radius) {
+__device__ float calculateDensity(int n, float3 pos, float3* positions, float radius, float dt) {
   
   float density = 0;
   const float mass = 1;
@@ -32,7 +32,11 @@ __device__ float calculateDensity(int n, float3 pos, float3* positions, float ra
   for (int i = 0; i < n; i++) {
     
     float3 other = positions[2*i];
-
+    float3 vel = positions[2*i+1];
+    other.x += vel.x*dt;
+    other.y += vel.y*dt;
+    other.z += vel.z*dt;
+  
     float dx = pos.x - other.x;
     float dy = pos.y - other.y;
     float dz = pos.z - other.z;
@@ -132,9 +136,15 @@ __device__ float3 calculateViscosity(int n, float3 pos, float3* data, float radi
   return viscosity;
 }
 
-__global__ void updateDensities(int n, float3 *posData, float *densities, float radius) {
+__global__ void updateDensities(int n, float3 *posData, float *densities, float radius, float dt) {
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
-  densities[index] = calculateDensity(n, posData[2*index], posData, radius);
+  float3 predPos;
+  float3 pos = posData[2*index];
+  float3 vel = posData[2*index + 1];
+  predPos.x = pos.x + vel.x * dt;
+  predPos.y = pos.y + vel.y * dt;
+  predPos.z = pos.z + vel.z * dt;
+  densities[index] = calculateDensity(n, predPos, posData, radius, dt);
   //printf("%d: %f\n", index, densities[index]);
 };
 

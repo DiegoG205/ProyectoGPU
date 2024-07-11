@@ -178,7 +178,7 @@ public:
     cudaMemcpy(dptr, auxDev, 2*N*sizeof(float3), cudaMemcpyDeviceToDevice);
 
     //std::cout << "Start kernel\n";
-    updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius);
+    updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius, settings.dt);
     fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, settings.dt, 
                                           settings.sRadius, settings.targetDensity, settings.PressureMultiplier, 
                                           settings.gravity, settings.ViscosityStr);
