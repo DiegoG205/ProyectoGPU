@@ -14,7 +14,7 @@
 
 #include "fluid_sim.cu"
 
-#define N 256
+#define N 2048
 
 using std::make_unique;
 using std::unique_ptr;
@@ -73,6 +73,8 @@ public:
 
     float targetDensity = 0.5f;
     float PressureMultiplier = 0.5f;
+    float ViscosityStr = 0.5f;
+    float gravity = 10.f;
 
   } settings;
 
@@ -117,7 +119,7 @@ public:
     glm::mat4 view = cam->view();
     shader->set("view", cam->view());
     float aspect = (float)width_ / (float)height_;
-    projection = glm::ortho(-20.f, 20.f, -20.0f, 20.0f, 0.1f, 100.0f);
+    projection = glm::ortho(-50.f, 50.f, -50.0f, 50.0f, 0.1f, 100.0f);
     shader->set("projection", projection);
 
     shader->set("model", glm::mat4(1.0f));
@@ -178,7 +180,8 @@ public:
     //std::cout << "Start kernel\n";
     updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius);
     fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, settings.dt, 
-                                          settings.sRadius, settings.targetDensity, settings.PressureMultiplier);
+                                          settings.sRadius, settings.targetDensity, settings.PressureMultiplier, 
+                                          settings.gravity, settings.ViscosityStr);
 
     // Unmap buffer object
     cudaGraphicsUnmapResources(1, cudaVBOResourcePointer, 0);
@@ -193,8 +196,10 @@ public:
     ImGui::SetNextWindowSize(ImVec2(viewport->Size.x/3, viewport->Size.y/3));
     if (ImGui::Begin("Opciones", NULL, flags)) {
       ImGui::Text("Opciones");
-      ImGui::SliderFloat("Target Density", &settings.targetDensity, 0, 2.f);
-      ImGui::SliderFloat("Pressure Multiplier", &settings.PressureMultiplier, 0, 100.f);
+      ImGui::SliderFloat("Target Density", &settings.targetDensity, 0, 5.f);
+      ImGui::SliderFloat("Pressure Multiplier", &settings.PressureMultiplier, 0, 2.f);
+      ImGui::SliderFloat("Viscosity", &settings.ViscosityStr, 0, 1.f);
+      ImGui::SliderFloat("Gravity", &settings.gravity, 0, 50.f);
       ImGui::SliderFloat("Smoothing Radius", &settings.sRadius, 1.f, 4.f);
       ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.02f);
       ImGui::Checkbox("Stop", &settings.stop);
@@ -260,7 +265,7 @@ public:
       
       float3 auxP[2*N];
       cudaMemcpy(auxP, dptr, 2*N*sizeof(float3), cudaMemcpyDeviceToHost);
-      for (int i = 0; i < N; i++) std::cout << i << ": " << auxP[i].x << " " << auxP[i].y << " " << auxP[i].z << "\n";
+      for (int i = 0; i < N; i++) std::cout << i << ": " << auxP[2*i].x << " " << auxP[2*i].y << " " << auxP[2*i].z << "\n";
       cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
     }
   }

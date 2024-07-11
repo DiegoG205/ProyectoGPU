@@ -49,7 +49,7 @@ __device__ float calculateDensity(int n, float3 pos, float3* positions, float ra
 
 __device__ float densityToPressure(float density, float targetDensity, float pressureMultiplier) {
   float delta = density - targetDensity;
-  return (abs(delta) * pressureMultiplier);
+  return (delta * pressureMultiplier);
 };
 
 __device__ float calculateSharedPressure(float density1, float density2, float targetDensity, float pressureMultiplier) {
@@ -58,7 +58,7 @@ __device__ float calculateSharedPressure(float density1, float density2, float t
   return (pressure1+pressure2)/2;
 };
 
-__device__ float3 calculatePressure(int n, float3 pos, float3* positions, float* densities, float radius, float trgDen, float pressMult) {
+__device__ float3 calculatePressure(int n, float3 pos, float3* data, float* densities, float radius, float trgDen, float pressMult) {
 
   float3 pressure = {0,0,0};
   float mass = 1;
@@ -70,7 +70,7 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* positions, float*
     
     if (i == index) continue;
 
-    float3 other = positions[2*i];
+    float3 other = data[2*i];
 
     float dx = pos.x - other.x;
     float dy = pos.y - other.y;
@@ -96,6 +96,42 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* positions, float*
   return pressure;
 }
 
+__device__ float3 calculateViscosity(int n, float3 pos, float3* data, float radius, float viscStr) {
+
+  float3 viscosity = {0, 0, 0};
+  float mass = 1;
+  unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+  float3 selfVelocity = data[2*index+1];
+
+  for (int i = 0; i < n; i++){
+    if (i == index) continue;
+
+    float3 other = data[2*i];
+    float3 otherVel = data[2*i+1];
+
+    float dx = pos.x - other.x;
+    float dy = pos.y - other.y;
+    float dz = pos.z - other.z;
+    float dist = norm3d(dx, dy, dz);
+    if (dist <= 0.01) continue;
+    float3 dir = {-dx/dist, -dy/dist, -dz/dist};
+
+    float influence = smoothingKernel(radius, dist);
+
+    viscosity.x += (otherVel.x - selfVelocity.x)*influence;
+    viscosity.y += (otherVel.y - selfVelocity.y)*influence;
+    viscosity.z += (otherVel.z - selfVelocity.z)*influence;
+    
+  }
+
+  viscosity.x *= viscStr;
+  viscosity.y *= viscStr;
+  viscosity.z *= viscStr;
+
+  return viscosity;
+}
+
 __global__ void updateDensities(int n, float3 *posData, float *densities, float radius) {
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
   densities[index] = calculateDensity(n, posData[2*index], posData, radius);
@@ -103,7 +139,7 @@ __global__ void updateDensities(int n, float3 *posData, float *densities, float 
 };
 
 __global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densities, float dt, 
-                             float radius, float trgDen, float pressMult) {
+                             float radius, float trgDen, float pressMult, float grav, float viscStr) {
 
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -112,25 +148,32 @@ __global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densit
   float3 vel = data[2*index + 1];
 
   // Gravity
-  // vel.y -= 9.8 * dt;
+  vel.y -= grav * dt;
 
   // Pressure force
   float3 pressure = calculatePressure(n, pos, data, densities, radius, trgDen, pressMult);
   float3 pressureAcc = {pressure.x / densities[index], pressure.y / densities[index], pressure.z / densities[index]};
 
-  // TODO: sumar la aceleracion, no asignarla directamente
   vel.x += pressureAcc.x * dt;
   vel.y += pressureAcc.y * dt;
   vel.z += pressureAcc.z * dt;
 
+  // Viscosity force
+  float3 viscosity = calculateViscosity(n, pos, data, radius, viscStr);
+  float3 viscosityAcc = {viscosity.x / densities[index], viscosity.y / densities[index], viscosity.z / densities[index]};
+
+  vel.x += viscosityAcc.x * dt;
+  vel.y += viscosityAcc.y * dt;
+  vel.z += viscosityAcc.z * dt;
+
   // Border Collisions
-  if (std::abs(pos.y + 0.05) >= 19.95){ 
-    vel.y = -vel.y*0.85;
-    pos.y = 19.9*copysign(1.0, pos.y);
+  if (std::abs(pos.y + 0.05) >= 49.95){ 
+    vel.y = -vel.y*0.7;
+    pos.y = 49.9*copysign(1.0, pos.y);
   }
-  if (std::abs(pos.x + 0.05) >= 19.95) {
-    vel.x = -vel.x*0.85;
-    pos.x = 19.9*copysign(1.0, pos.x);
+  if (std::abs(pos.x + 0.05) >= 49.95) {
+    vel.x = -vel.x*0.7;
+    pos.x = 49.9*copysign(1.0, pos.x);
   }
   
   pos.x += vel.x * dt;
