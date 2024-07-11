@@ -52,11 +52,19 @@ __device__ float densityToPressure(float density, float targetDensity, float pre
   return (abs(delta) * pressureMultiplier);
 };
 
+__device__ float calculateSharedPressure(float density1, float density2, float targetDensity, float pressureMultiplier) {
+  float pressure1 = densityToPressure(density1, targetDensity, pressureMultiplier);
+  float pressure2 = densityToPressure(density2, targetDensity, pressureMultiplier);
+  return (pressure1+pressure2)/2;
+};
+
 __device__ float3 calculatePressure(int n, float3 pos, float3* positions, float* densities, float radius, float trgDen, float pressMult) {
 
   float3 pressure = {0,0,0};
   float mass = 1;
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+  float selfDensity = densities[index];
 
   for(int i = 0; i < n; i++) {
     
@@ -77,7 +85,8 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* positions, float*
     if (density == 0.0) {
       continue;
     };
-    float val = densityToPressure(density, trgDen, pressMult) * slope * mass / density;
+    // float val = densityToPressure(density, trgDen, pressMult) * slope * mass / density;
+    float val = calculateSharedPressure(density, selfDensity, trgDen, pressMult) * slope * mass / density;
 
     pressure.x -= dir.x * val;
     pressure.y -= dir.y * val;
