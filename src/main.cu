@@ -65,6 +65,8 @@ class FluidApp : public App {
 
     struct {
       float xmouse, ymouse;
+      float realXpos, realYpos;
+      int mouseAction = 0;
       bool showMenu = true;
       bool stop = true;
 
@@ -134,7 +136,9 @@ class FluidApp : public App {
     //deltaTime *= settings.speed;
     if (settings.stop)
       return;
-
+    if(settings.mouseAction) {
+      update_real_mouse_pos();
+    }
     runCuda(&(particles->VBO), auxDev);
   }
 
@@ -182,7 +186,8 @@ class FluidApp : public App {
     updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius, settings.dt);
     fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, settings.dt, 
                                           settings.sRadius, settings.targetDensity, settings.PressureMultiplier, 
-                                          settings.gravity, settings.ViscosityStr);
+                                          settings.gravity, settings.ViscosityStr, 
+                                          settings.realXpos, settings.realYpos, settings.mouseAction);
 
     // Unmap buffer object
     cudaGraphicsUnmapResources(1, cudaVBOResourcePointer, 0);
@@ -207,6 +212,18 @@ class FluidApp : public App {
     }
     ImGui::End();
   }
+
+  void update_real_mouse_pos() {
+    float x = (2.0f * settings.xmouse) / width_ - 1.0f;
+    float y = 1.0f - (2.0f * settings.ymouse) / height_;
+
+    // from viewport to world
+    glm::vec4 pos(x, y, 0.0f, 1.0f);
+    glm::mat4 toWorld = glm::inverse(projection * cam->view());
+    glm::vec4 realPos = toWorld * pos;
+    settings.realXpos = realPos.x;
+    settings.realYpos = realPos.y;
+  };
 
   void key_callback(int key, int scancode, int action, int mods) override {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
@@ -236,15 +253,12 @@ class FluidApp : public App {
     if (io->WantCaptureMouse)
       return;
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-      //settings.target = nullptr;
-      float x = (2.0f * settings.xmouse) / width_ - 1.0f;
-      float y = 1.0f - (2.0f * settings.ymouse) / height_;
+    
+      settings.mouseAction = 1;
 
-      // from viewport to world
-      glm::vec4 pos(x, y, 0.0f, 1.0f);
-      glm::mat4 toWorld = glm::inverse(projection * cam->view());
-      glm::vec4 realPos = toWorld * pos;
-      float3 p = {realPos.x, realPos.y, 0};
+      update_real_mouse_pos();
+
+      float3 p = {settings.realXpos, settings.realYpos, 0};
       float3 *dptr;
       size_t numBytes;
       cudaGraphicsMapResources(1, &(particles->VBO), 0);
@@ -257,17 +271,24 @@ class FluidApp : public App {
       std::cout << res << "\n";
       cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
     }
+    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+      settings.mouseAction = 0;
+    }
     if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
+      settings.mouseAction = -1;
       // from viewport to world
-      float3 *dptr;
-      size_t numBytes;
-      cudaGraphicsMapResources(1, &(particles->VBO), 0);
-      cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *&(particles->VBO));
+      // float3 *dptr;
+      // size_t numBytes;
+      // cudaGraphicsMapResources(1, &(particles->VBO), 0);
+      // cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *&(particles->VBO));
       
-      float3 auxP[2*N];
-      cudaMemcpy(auxP, dptr, 2*N*sizeof(float3), cudaMemcpyDeviceToHost);
-      for (int i = 0; i < N; i++) std::cout << i << ": " << auxP[2*i].x << " " << auxP[2*i].y << " " << auxP[2*i].z << "\n";
-      cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
+      // float3 auxP[2*N];
+      // cudaMemcpy(auxP, dptr, 2*N*sizeof(float3), cudaMemcpyDeviceToHost);
+      // for (int i = 0; i < N; i++) std::cout << i << ": " << auxP[2*i].x << " " << auxP[2*i].y << " " << auxP[2*i].z << "\n";
+      // cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
+    }
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_RELEASE) {
+      settings.mouseAction = 0;
     }
   }
 };
