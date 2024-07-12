@@ -62,6 +62,8 @@ class FluidApp : public App {
 
     float3 *auxDev;
     float *densDev;
+    uint3 *hashDev;
+    uint *spatialIndexDev;
 
     struct {
       float xmouse, ymouse;
@@ -80,6 +82,11 @@ class FluidApp : public App {
 
     } settings;
 
+    double prev_time = 0.0;
+    double current_time = 0.0;
+    double time_diff = 0.0;
+    unsigned int counter = 0;
+
   FluidApp() : App(3, 3, 1000, 1000, "Fluid Simulation"), projection(1.0f) {
 
     // Crear datos partículas
@@ -88,6 +95,8 @@ class FluidApp : public App {
 
     cudaMalloc(&auxDev, size);
     cudaMalloc(&densDev, sizeof(float)*N);
+    cudaMalloc(&hashDev, sizeof(uint3)*N);
+    cudaMalloc(&spatialIndexDev, sizeof(uint)*N);
 
     createData(auxDev);
 
@@ -133,7 +142,17 @@ class FluidApp : public App {
   }
 
   void update(float deltaTime) override {
-    //deltaTime *= settings.speed;
+    // FPS counter
+    current_time = glfwGetTime();
+    time_diff = current_time - prev_time;
+    counter++;
+    if (time_diff >= 0.5) {
+      std::string FPS = std::to_string((1.0/time_diff) * counter);
+      std::string newTitle = "Fluid Simulation - " + FPS + " FPS";
+      glfwSetWindowTitle(window, newTitle.c_str());
+      prev_time = current_time;
+      counter = 0;
+    }
     if (settings.stop)
       return;
     if(settings.mouseAction) {
@@ -181,9 +200,23 @@ class FluidApp : public App {
     // Execute the kernel
     cudaMemcpy(dptr, auxDev, 2*N*sizeof(float3), cudaMemcpyDeviceToDevice);
 
-    //std::cout << "Start kernel\n";
-    // Aqui hacer el sort 
+    // Crear el hash
+    calcHash<<<numBlocks, blockSize>>>(N, dptr, hashDev, spatialIndexDev, settings.dt);
+
+    // Hacer el sort 
+    for (int k = 2; k <= N; k <<=1) {
+      for (int j = k>>1; j>0; j=j>>1) {
+        bitonicSortStep<<<numBlocks, blockSize>>>(hashDev, j, k);
+      }
+    }
+    
+    // Rellenar los spatialIndex
+    // En el arreglo spatialIndexDev, quedara en la posicion k la posicion en hashDev donde empieza la celda con key k
+
+    findCellStart<<<numBlocks, blockSize>>>(N, hashDev, spatialIndexDev);
+    
     updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius, settings.dt);
+    // updateDensitiesHash<<<numBlocks, blockSize>>>(N, dptr, densDev, hashDev, spatialIndexDev, settings.sRadius, settings.dt);
     fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, settings.dt, 
                                           settings.sRadius, settings.targetDensity, settings.PressureMultiplier, 
                                           settings.gravity, settings.ViscosityStr, 
@@ -207,7 +240,7 @@ class FluidApp : public App {
       ImGui::SliderFloat("Viscosity", &settings.ViscosityStr, 0, 1.f);
       ImGui::SliderFloat("Gravity", &settings.gravity, 0, 50.f);
       ImGui::SliderFloat("Smoothing Radius", &settings.sRadius, 1.f, 4.f);
-      ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.02f);
+      ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.05f);
       ImGui::Checkbox("Stop", &settings.stop);
     }
     ImGui::End();

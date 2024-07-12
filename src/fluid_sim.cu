@@ -42,10 +42,18 @@ __device__ uint2 pos2Cell(float3 pos, float cellSide) {
 (1, 1) -> 95683
 sort basado en 95683
 [(95683, 0), (95683, 53), (3284854, 12), ...]
+
+Tengo las posiciones
+segun la posicion estan dentro de una celda
+cada celda tiene su hash
+
+Tengo una particula
+Obtengo la celda en la que esta la particula
+Loop solo considerando las particulas en la misma celda o las celdas vecinas
 */
 
 
-__global__ void calcHash(int n, float3 *posData, uint2 *hashData, float dt) {
+__global__ void calcHash(int n, float3 *posData, uint3 *hashData, uint* spatialIndex, float dt) {
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
 
   float3 pos = posData[2*index];
@@ -62,25 +70,37 @@ __global__ void calcHash(int n, float3 *posData, uint2 *hashData, float dt) {
 
   hashData[index].x = hashCell(cell);
   hashData[index].y = index;
+  hashData[index].z = keyFromHash(hashData[index].x, n);
+
+  spatialIndex[index] = UINT_MAX;
 };
 
-__global__ void bitonicSortStep(uint2* hashData, int j, int k) {
+__global__ void findCellStart(int n, uint3* hashData, uint* spatialIndex) {
+  uint index = blockIdx.x * blockDim.x + threadIdx.x;
+
+  uint key = hashData[index].z;
+  uint prevKey = (index == 0) ? UINT_MAX : hashData[index - 1].z;
+
+  if (key != prevKey) spatialIndex[key] = index;
+};
+
+__global__ void bitonicSortStep(uint3* hashData, int j, int k) {
   unsigned int ind = blockIdx.x * blockDim.x + threadIdx.x;
   unsigned int ixj = ind^j;
 
-  uint2 pair0 = hashData[ind];
-  uint2 pair1 = hashData[ixj];
+  uint3 pair0 = hashData[ind];
+  uint3 pair1 = hashData[ixj];
 
 
   if ((ixj) > ind) {
     if ((ind&k == 0)){
-      if (pair0.x > pair1.x) {
+      if (pair0.z > pair1.z) {
         hashData[ind] = pair1;
         hashData[ixj] = pair0;
       }
     }
     if ((ind&k) != 0){
-      if (pair0.x < pair1.x) {
+      if (pair0.z < pair1.z) {
         hashData[ind] = pair1;
         hashData[ixj] = pair0;
       }
@@ -129,7 +149,7 @@ __device__ float calculateDensity(int n, float3 pos, float3* positions, float ra
 };
 
 // Actualizar esta
-__device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint2* hashData, float radius, float dt) {
+__device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint3* hashData, uint *spatialIndex, float radius, float dt) {
   
   float density = 0;
   const float mass = 1;
@@ -139,29 +159,52 @@ __device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint
   uint hash = hashCell(cell);
   uint index = 0;
   
-
+  //i= -1, 0, 1
   for (int i = -1; i < 2; i++){
+    //j= -1, 0, 1
     for (int j = -1; j < 2; j++){
+      //celda vecina
+      uint2 neighbor_cell = {i + cell.x, j + cell.y};
+      //??
+      uint key = keyFromHash(hashCell(neighbor_cell), n);
+      //??
+      uint curInd = spatialIndex[key];
 
-      uint2 cell = {i + cell.x, j + cell.y};
-      uint key = keyFromHash(hashCell(cell), n);
-      uint index = hashData[key].y;
+      while (curInd < n) {
+        uint3 atData = hashData[curInd];
+        curInd++;
 
-      float3 other = positions[2*index];
-      float3 vel = positions[2*index+1];
-      other.x += vel.x*dt;
-      other.y += vel.y*dt;
-      other.z += vel.z*dt;
-  
-      float dx = pos.x - other.x;
-      float dy = pos.y - other.y;
-      float dz = pos.z - other.z;
-      //float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-      float dist = norm3d(dx, dy, dz);
+        // Si la llave es distinta, sabemos que cambiamos de celda
+        if (atData.z != key){
+          break;
+        }
+        
+        // Si el hash es distinto, es una celda con choque, pero
+        // tenemos que seguir revisando
+        if (atData.x != hash) {
+          continue;
+        }
 
-      float influence = smoothingKernel(radius, dist);
+        uint index = atData.y;
+        float3 other = positions[2*index];
+        float3 vel = positions[2*index+1];
+        other.x += vel.x*dt;
+        other.y += vel.y*dt;
+        other.z += vel.z*dt;
+    
+        float dx = pos.x - other.x;
+        float dy = pos.y - other.y;
+        float dz = pos.z - other.z;
+        //float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+        float dist = norm3d(dx, dy, dz);
 
-      density += influence * mass;
+        float influence = smoothingKernel(radius, dist);
+
+        density += influence * mass;
+
+      }
+
+
   
     }
   }
@@ -264,6 +307,18 @@ __global__ void updateDensities(int n, float3 *posData, float *densities, float 
   predPos.y = pos.y + vel.y * dt;
   predPos.z = pos.z + vel.z * dt;
   densities[index] = calculateDensity(n, predPos, posData, radius, dt);
+  //printf("%d: %f\n", index, densities[index]);
+};
+
+__global__ void updateDensitiesHash(int n, float3 *posData, float *densities, uint3 *hashData, uint *spatialIndex, float radius, float dt) {
+  unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+  float3 predPos;
+  float3 pos = posData[2*index];
+  float3 vel = posData[2*index + 1];
+  predPos.x = pos.x + vel.x * dt;
+  predPos.y = pos.y + vel.y * dt;
+  predPos.z = pos.z + vel.z * dt;
+  densities[index] = calculateDensityHash(n, predPos, posData, hashData, spatialIndex, radius, dt);
   //printf("%d: %f\n", index, densities[index]);
 };
 
