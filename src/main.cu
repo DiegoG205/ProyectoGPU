@@ -53,30 +53,30 @@ class CudaBuffer : public VertexBuffer {
 
 
 class FluidApp : public App {
-public:
-  unique_ptr<Shader> shader;
-  unique_ptr<Camera> cam;
-  unique_ptr<Buffer> quad;
-  unique_ptr<CudaBuffer> particles;
-  glm::mat4 projection;
+  public:
+    unique_ptr<Shader> shader;
+    unique_ptr<Camera> cam;
+    unique_ptr<Buffer> quad;
+    unique_ptr<CudaBuffer> particles;
+    glm::mat4 projection;
 
-  float3 *auxDev;
-  float *densDev;
+    float3 *auxDev;
+    float *densDev;
 
-  struct {
-    float xmouse, ymouse;
-    bool showMenu = true;
-    bool stop = true;
+    struct {
+      float xmouse, ymouse;
+      bool showMenu = true;
+      bool stop = true;
 
-    float sRadius = 3.f;
-    float dt = 0.01f;
+      float sRadius = 3.f;
+      float dt = 0.01f;
 
-    float targetDensity = 0.5f;
-    float PressureMultiplier = 0.5f;
-    float ViscosityStr = 0.5f;
-    float gravity = 10.f;
+      float targetDensity = 0.5f;
+      float PressureMultiplier = 0.5f;
+      float ViscosityStr = 0.5f;
+      float gravity = 10.f;
 
-  } settings;
+    } settings;
 
   FluidApp() : App(3, 3, 1000, 1000, "Fluid Simulation"), projection(1.0f) {
 
@@ -140,26 +140,26 @@ public:
 
   void createData(float3 *auxDev) {
 
-  float3 aux[2*N];
+    float3 aux[2*N];
 
-  int rowSize = (int)std::sqrt(N);
-  int colSize = (N - 1) / rowSize + 1;
-  float size = 18.f;
+    int rowSize = (int)std::sqrt(N);
+    int colSize = (N - 1) / rowSize + 1;
+    float size = 18.f;
 
-  for (int i = 0; i < colSize; i++) {
-    for(int j = 0; j < rowSize; j++) {
-      int index = i*rowSize + j;
-      std::cout << index << "\n";
-      if (index >= N) break;
-      aux[2*index].x = j * size/rowSize - size/2;
-      aux[2*index].y = i * size/colSize - size/2;
-      aux[2*index].z = 0;
-      aux[2*index + 1] = {0,0,0};
+    for (int i = 0; i < colSize; i++) {
+      for(int j = 0; j < rowSize; j++) {
+        int index = i*rowSize + j;
+        std::cout << index << "\n";
+        if (index >= N) break;
+        aux[2*index].x = j * size/rowSize - size/2;
+        aux[2*index].y = i * size/colSize - size/2;
+        aux[2*index].z = 0;
+        aux[2*index + 1] = {0,0,0};
+      }
     }
-  }
-  //for(int i = 0; i < N; i++) std::cout << aux[2*i].x << " " << aux[2*i].y << " " << aux[2*i].z << "\n" << aux[2*i+1].x << " " << aux[2*i+1].y << " " << aux[2*i+1].z << "\n";
-  cudaMemcpy(auxDev, aux, 2*N*sizeof(float3), cudaMemcpyHostToDevice);
-};
+    //for(int i = 0; i < N; i++) std::cout << aux[2*i].x << " " << aux[2*i].y << " " << aux[2*i].z << "\n" << aux[2*i+1].x << " " << aux[2*i+1].y << " " << aux[2*i+1].z << "\n";
+    cudaMemcpy(auxDev, aux, 2*N*sizeof(float3), cudaMemcpyHostToDevice);
+  };
 
   void runCuda(struct cudaGraphicsResource **cudaVBOResourcePointer, float3 *auxDev) {
     // Map OpenGL buffer object for writing from CUDA
@@ -178,6 +178,7 @@ public:
     cudaMemcpy(dptr, auxDev, 2*N*sizeof(float3), cudaMemcpyDeviceToDevice);
 
     //std::cout << "Start kernel\n";
+    // Aqui hacer el sort 
     updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius, settings.dt);
     fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, settings.dt, 
                                           settings.sRadius, settings.targetDensity, settings.PressureMultiplier, 

@@ -15,6 +15,8 @@
 #define PRIME1 9439
 #define PRIME2 17977
 
+typedef unsigned int uint;
+
 __device__ float smoothingKernel(float radius, float dist) {
   float volume = 2 * PI * std::pow(radius, 3) / 3;
   float value = max(0.0f, radius - dist);
@@ -27,6 +29,7 @@ __device__ float smoothingKernelDerivative(float radius, float dist) {
   return value * scale;
 };
 
+// Actualizar esta
 __device__ float calculateDensity(int n, float3 pos, float3* positions, float radius, float dt) {
   
   float density = 0;
@@ -65,6 +68,7 @@ __device__ float calculateSharedPressure(float density1, float density2, float t
   return (pressure1+pressure2)/2;
 };
 
+// Actualizar esta
 __device__ float3 calculatePressure(int n, float3 pos, float3* data, float* densities, float radius, float trgDen, float pressMult) {
 
   float3 pressure = {0,0,0};
@@ -103,6 +107,7 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* data, float* dens
   return pressure;
 }
 
+// Actualizar esta
 __device__ float3 calculateViscosity(int n, float3 pos, float3* data, float radius, float viscStr) {
 
   float3 viscosity = {0, 0, 0};
@@ -143,6 +148,29 @@ __device__ uint hashCell(uint xid, uint yid) {
   return (xid*PRIME1 + yid*PRIME2);
 }
 
+__device__ uint hashCell(uint2 cell){
+  return (cell.x*PRIME1 + cell.y*PRIME2);
+}
+
+__device__ uint keyFromHash(uint hash, uint tableSize) {
+  return hash % tableSize;
+}
+
+__device__ uint2 pos2Cell(float3 pos, float cellSide) {
+  return uint2{static_cast<uint>(floor(pos.x/cellSide)), static_cast<uint>(floor(pos.y/cellSide))};
+};
+
+/*
+( 1,-1) ( 1, 0) ( 1, 1) 
+( 0,-1) ( 0, 0) ( 0, 1)
+(-1,-1) (-1, 0) (-1, 1)
+
+(1, 1) -> 95683
+sort basado en 95683
+[(95683, 0), (95683, 53), (3284854, 12), ...]
+*/
+
+
 __global__ void calcHash(int n, float3 *posData, uint2 *hashData, float dt) {
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -156,27 +184,35 @@ __global__ void calcHash(int n, float3 *posData, uint2 *hashData, float dt) {
   float radius = 3.0;
   float cellSide = radius;
 
-  uint xid = floor(predPos.x / cellSide);
-  uint yid = floor(predPos.y / cellSide);
+  uint2 cell = pos2Cell(predPos, cellSide);
 
-  hashData[index].x = hashCell(xid, yid);
+  hashData[index].x = hashCell(cell);
   hashData[index].y = index;
-}
+};
 
-__device__ void bitonicSortStep(uint2 hashData, int j, int k) {
+__global__ void bitonicSortStep(uint2* hashData, int j, int k) {
   unsigned int ind = blockIdx.x * blockDim.x + threadIdx.x;
   unsigned int ixj = ind^j;
 
+  uint2 pair0 = hashData[ind];
+  uint2 pair1 = hashData[ixj];
 
 
-
-
-}
-
-__global__ void sortHash(int n, uint2 *hashData) {
-
-
-}
+  if ((ixj) > ind) {
+    if ((ind&k == 0)){
+      if (pair0.x > pair1.x) {
+        hashData[ind] = pair1;
+        hashData[ixj] = pair0;
+      }
+    }
+    if ((ind&k) != 0){
+      if (pair0.x < pair1.x) {
+        hashData[ind] = pair1;
+        hashData[ixj] = pair0;
+      }
+    }
+  }
+};
 
 
 __global__ void updateDensities(int n, float3 *posData, float *densities, float radius, float dt) {
@@ -242,7 +278,7 @@ float calculateDensityHost(int n, float3 pos, float3* positions, float radius) {
   
   float density = 0;
   const float mass = 1;
-  float volume = PI * std::pow(radius, 4) / 6;
+  float volume = 2 * PI * std::pow(radius, 3) / 3;
 
   for (int i = 0; i < n; i++) {
 
