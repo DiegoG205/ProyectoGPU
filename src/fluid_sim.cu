@@ -12,6 +12,9 @@
 
 #define PI 3.14159265358979323846
 
+#define PRIME1 9439
+#define PRIME2 17977
+
 __device__ float smoothingKernel(float radius, float dist) {
   float volume = 2 * PI * std::pow(radius, 3) / 3;
   float value = max(0.0f, radius - dist);
@@ -135,6 +138,46 @@ __device__ float3 calculateViscosity(int n, float3 pos, float3* data, float radi
 
   return viscosity;
 }
+
+__device__ uint hashCell(uint xid, uint yid) {
+  return (xid*PRIME1 + yid*PRIME2);
+}
+
+__global__ void calcHash(int n, float3 *posData, uint2 *hashData, float dt) {
+  unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+  float3 pos = posData[2*index];
+  float3 vel = posData[2*index + 1];
+  float3 predPos = {0,0,0};
+  predPos.x = pos.x + vel.x * dt;
+  predPos.y = pos.y + vel.y * dt;
+  predPos.z = pos.z + vel.z * dt;
+
+  float radius = 3.0;
+  float cellSide = radius;
+
+  uint xid = floor(predPos.x / cellSide);
+  uint yid = floor(predPos.y / cellSide);
+
+  hashData[index].x = hashCell(xid, yid);
+  hashData[index].y = index;
+}
+
+__device__ void bitonicSortStep(uint2 hashData, int j, int k) {
+  unsigned int ind = blockIdx.x * blockDim.x + threadIdx.x;
+  unsigned int ixj = ind^j;
+
+
+
+
+
+}
+
+__global__ void sortHash(int n, uint2 *hashData) {
+
+
+}
+
 
 __global__ void updateDensities(int n, float3 *posData, float *densities, float radius, float dt) {
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
