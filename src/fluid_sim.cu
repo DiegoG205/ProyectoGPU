@@ -31,7 +31,7 @@ __device__ uint keyFromHash(uint hash, uint tableSize) {
 }
 
 __device__ uint2 pos2Cell(float3 pos, float cellSide) {
-  return uint2{static_cast<uint>(floor(pos.x/cellSide)), static_cast<uint>(floor(pos.y/cellSide))};
+  return uint2{static_cast<uint>(floor((pos.x+50)/cellSide)), static_cast<uint>(floor((pos.y+50)/cellSide))};
 };
 
 /*
@@ -88,12 +88,18 @@ __global__ void bitonicSortStep(uint3* hashData, int j, int k) {
   unsigned int ind = blockIdx.x * blockDim.x + threadIdx.x;
   unsigned int ixj = ind^j;
 
-  uint3 pair0 = hashData[ind];
-  uint3 pair1 = hashData[ixj];
+  uint3 pair0;
+  pair0.x = hashData[ind].x;
+  pair0.y = hashData[ind].y;
+  pair0.z = hashData[ind].z;
+  uint3 pair1;
+  pair1.x = hashData[ixj].x;
+  pair1.y = hashData[ixj].y;
+  pair1.z = hashData[ixj].z;
 
 
   if ((ixj) > ind) {
-    if ((ind&k == 0)){
+    if ((ind&k) == 0){
       if (pair0.z > pair1.z) {
         hashData[ind] = pair1;
         hashData[ixj] = pair0;
@@ -157,7 +163,6 @@ __device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint
   //Obtener la celda y el hash de la celda
   uint2 cell = pos2Cell(pos, radius);
   uint hash = hashCell(cell);
-  uint index = 0;
   
   //i= -1, 0, 1
   for (int i = -1; i < 2; i++){
@@ -331,13 +336,14 @@ __global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densit
 
   float3 pos = data[2*index];
   float3 vel = data[2*index + 1];
+  float density = densities[index];
 
   // Gravity
   vel.y -= grav * dt;
 
   // Pressure force
   float3 pressure = calculatePressure(n, pos, data, densities, radius, trgDen, pressMult);
-  float3 pressureAcc = {pressure.x / densities[index], pressure.y / densities[index], pressure.z / densities[index]};
+  float3 pressureAcc = {pressure.x / density, pressure.y / density, pressure.z / density};
 
   vel.x += pressureAcc.x * dt;
   vel.y += pressureAcc.y * dt;
@@ -345,7 +351,7 @@ __global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densit
 
   // Viscosity force
   float3 viscosity = calculateViscosity(n, pos, data, radius, viscStr);
-  float3 viscosityAcc = {viscosity.x / densities[index], viscosity.y / densities[index], viscosity.z / densities[index]};
+  float3 viscosityAcc = {viscosity.x / density, viscosity.y / density, viscosity.z / density};
 
   vel.x += viscosityAcc.x * dt;
   vel.y += viscosityAcc.y * dt;
@@ -365,10 +371,10 @@ __global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densit
     float dx = pos.x - mouseX;
     float dy = pos.y - mouseY;
     float dist = sqrt(dx*dx + dy*dy);
-    if (dist <= 6.f) {
+    if (dist <= 5.f) {
       float2 dir = {-dx/dist, -dy/dist};
-      vel.x = dir.x * 20 * mouseAction;
-      vel.y = dir.y * 20 * mouseAction;
+      vel.x += dir.x * 10 * mouseAction / density ;
+      vel.y += dir.y * 10 * mouseAction / density ;
     }
   }
   
