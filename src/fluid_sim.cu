@@ -154,7 +154,6 @@ __device__ float calculateDensity(int n, float3 pos, float3* positions, float ra
   return density;
 };
 
-// Actualizar esta
 __device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint3* hashData, uint *spatialIndex, float radius, float dt) {
   
   float density = 0;
@@ -168,11 +167,11 @@ __device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint
   for (int i = -1; i < 2; i++){
     //j= -1, 0, 1
     for (int j = -1; j < 2; j++){
-      //celda vecina
+      // Celda vecina
       uint2 neighbor_cell = {i + cell.x, j + cell.y};
-      //??
+      // Llave de la celda vecina
       uint key = keyFromHash(hashCell(neighbor_cell), n);
-      //??
+      // Indice inicial
       uint curInd = spatialIndex[key];
 
       while (curInd < n) {
@@ -186,9 +185,9 @@ __device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint
         
         // Si el hash es distinto, es una celda con choque, pero
         // tenemos que seguir revisando
-        if (atData.x != hash) {
-          continue;
-        }
+        // if (atData.x != hash) {
+        //   continue;
+        // }
 
         uint index = atData.y;
         float3 other = positions[2*index];
@@ -208,9 +207,6 @@ __device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint
         density += influence * mass;
 
       }
-
-
-  
     }
   }
   return density;
@@ -227,7 +223,6 @@ __device__ float calculateSharedPressure(float density1, float density2, float t
   return (pressure1+pressure2)/2;
 };
 
-// Actualizar esta
 __device__ float3 calculatePressure(int n, float3 pos, float3* data, float* densities, float radius, float trgDen, float pressMult) {
 
   float3 pressure = {0,0,0};
@@ -266,7 +261,70 @@ __device__ float3 calculatePressure(int n, float3 pos, float3* data, float* dens
   return pressure;
 }
 
-// Actualizar esta
+__device__ float3 calculatePressureHash(int n, float3 pos, float3* data, float* densities, uint3 *hashData, uint *spatialIndex, float radius, float trgDen, float pressMult) {
+
+  float3 pressure = {0,0,0};
+  float mass = 1;
+  unsigned int self_index = blockIdx.x * blockDim.x + threadIdx.x;
+
+  float selfDensity = densities[self_index];
+
+  //Obtener la celda y el hash de la celda
+  uint2 cell = pos2Cell(pos, radius);
+  uint hash = hashCell(cell);
+  
+  //i= -1, 0, 1
+  for (int i = -1; i < 2; i++){
+    //j= -1, 0, 1
+    for (int j = -1; j < 2; j++){
+      // Celda vecina
+      uint2 neighbor_cell = {i + cell.x, j + cell.y};
+      // Llave de la celda vecina
+      uint key = keyFromHash(hashCell(neighbor_cell), n);
+      // Indice inicial
+      uint curInd = spatialIndex[key];
+
+      while (curInd < n) {
+        uint3 atData = hashData[curInd];
+        curInd++;
+
+        // Si la llave es distinta, sabemos que cambiamos de celda
+        if (atData.z != key){
+          break;
+        }
+
+        uint index = atData.y;
+        if (index == self_index) continue;
+
+        float3 other = data[2*index];
+    
+        float dx = pos.x - other.x;
+        float dy = pos.y - other.y;
+        float dz = pos.z - other.z;
+        //float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+        float dist = norm3d(dx, dy, dz);
+        float3 dir = {-dx/dist, -dy/dist, -dz/dist};
+
+        float slope = smoothingKernelDerivative(radius, dist);
+
+        float density = densities[index];
+        if (density == 0.0) {
+          continue;
+        };
+        // float val = densityToPressure(density, trgDen, pressMult) * slope * mass / density;
+        float val = calculateSharedPressure(density, selfDensity, trgDen, pressMult) * slope * mass / density;
+
+        pressure.x -= dir.x * val;
+        pressure.y -= dir.y * val;
+        pressure.z -= dir.z * val;
+
+      }
+    }
+  }
+
+  return pressure;
+}
+
 __device__ float3 calculateViscosity(int n, float3 pos, float3* data, float radius, float viscStr) {
 
   float3 viscosity = {0, 0, 0};
@@ -303,6 +361,67 @@ __device__ float3 calculateViscosity(int n, float3 pos, float3* data, float radi
   return viscosity;
 }
 
+__device__ float3 calculateViscosityHash(int n, float3 pos, float3* data, uint3 *hashData, uint *spatialIndex, float radius, float viscStr) {
+
+  float3 viscosity = {0, 0, 0};
+  float mass = 1;
+  unsigned int self_index = blockIdx.x * blockDim.x + threadIdx.x;
+
+  float3 selfVelocity = data[2*self_index+1];
+
+  //Obtener la celda y el hash de la celda
+  uint2 cell = pos2Cell(pos, radius);
+  uint hash = hashCell(cell);
+  
+  //i= -1, 0, 1
+  for (int i = -1; i < 2; i++){
+    //j= -1, 0, 1
+    for (int j = -1; j < 2; j++){
+      // Celda vecina
+      uint2 neighbor_cell = {i + cell.x, j + cell.y};
+      // Llave de la celda vecina
+      uint key = keyFromHash(hashCell(neighbor_cell), n);
+      // Indice inicial
+      uint curInd = spatialIndex[key];
+
+      while (curInd < n) {
+        uint3 atData = hashData[curInd];
+        curInd++;
+
+        // Si la llave es distinta, sabemos que cambiamos de celda
+        if (atData.z != key){
+          break;
+        }
+
+        uint index = atData.y;
+        if (index == self_index) continue;
+
+        float3 other = data[2*index];
+        float3 otherVel = data[2*index+1];
+
+        float dx = pos.x - other.x;
+        float dy = pos.y - other.y;
+        float dz = pos.z - other.z;
+        float dist = norm3d(dx, dy, dz);
+        if (dist <= 0.01) continue;
+        float3 dir = {-dx/dist, -dy/dist, -dz/dist};
+
+        float influence = smoothingKernel(radius, dist);
+
+        viscosity.x += (otherVel.x - selfVelocity.x)*influence;
+        viscosity.y += (otherVel.y - selfVelocity.y)*influence;
+        viscosity.z += (otherVel.z - selfVelocity.z)*influence;
+      }
+    }
+  }
+
+  viscosity.x *= viscStr;
+  viscosity.y *= viscStr;
+  viscosity.z *= viscStr;
+
+  return viscosity;
+}
+
 __global__ void updateDensities(int n, float3 *posData, float *densities, float radius, float dt) {
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
   float3 predPos;
@@ -327,8 +446,8 @@ __global__ void updateDensitiesHash(int n, float3 *posData, float *densities, ui
   //printf("%d: %f\n", index, densities[index]);
 };
 
-__global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densities, float dt, 
-                             float radius, float trgDen, float pressMult, float grav, float viscStr,
+__global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densities, uint3 *hashData, uint *spatialIndex, 
+                             float dt, float radius, float trgDen, float pressMult, float grav, float viscStr,
                              float mouseX, float mouseY, int mouseAction) {
 
   unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -342,7 +461,7 @@ __global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densit
   vel.y -= grav * dt;
 
   // Pressure force
-  float3 pressure = calculatePressure(n, pos, data, densities, radius, trgDen, pressMult);
+  float3 pressure = calculatePressureHash(n, pos, data, densities, hashData, spatialIndex, radius, trgDen, pressMult);
   float3 pressureAcc = {pressure.x / density, pressure.y / density, pressure.z / density};
 
   vel.x += pressureAcc.x * dt;
@@ -350,7 +469,7 @@ __global__ void fluid_kernel(int n, float3 *data, float3* dataAux, float *densit
   vel.z += pressureAcc.z * dt;
 
   // Viscosity force
-  float3 viscosity = calculateViscosity(n, pos, data, radius, viscStr);
+  float3 viscosity = calculateViscosityHash(n, pos, data, hashData, spatialIndex, radius, viscStr);
   float3 viscosityAcc = {viscosity.x / density, viscosity.y / density, viscosity.z / density};
 
   vel.x += viscosityAcc.x * dt;

@@ -14,7 +14,7 @@
 
 #include "fluid_sim.cu"
 
-#define N 2048
+#define N 8192
 
 using std::make_unique;
 using std::unique_ptr;
@@ -201,25 +201,24 @@ class FluidApp : public App {
     cudaMemcpy(dptr, auxDev, 2*N*sizeof(float3), cudaMemcpyDeviceToDevice);
 
     // Crear el hash
-    // calcHash<<<numBlocks, blockSize>>>(N, dptr, hashDev, spatialIndexDev, settings.dt);
+    calcHash<<<numBlocks, blockSize>>>(N, dptr, hashDev, spatialIndexDev, settings.dt);
 
     // Hacer el sort 
-    // int k,j;
-    // for (k = 2; k <= N; k <<=1) {
-    //   for (j = k>>1; j>0; j=j>>1) {
-    //     // std::cout << "j, k: " << j << " " << k << "\n";
-    //     bitonicSortStep<<<numBlocks, blockSize>>>(hashDev, j, k);
-    //   }
-    // }
+    int k,j;
+    for (k = 2; k <= N; k <<=1) {
+      for (j = k>>1; j>0; j=j>>1) {
+        bitonicSortStep<<<numBlocks, blockSize>>>(hashDev, j, k);
+      }
+    }
     
     // Rellenar los spatialIndex
     // En el arreglo spatialIndexDev, quedara en la posicion k la posicion en hashDev donde empieza la celda con key k
+    findCellStart<<<numBlocks, blockSize>>>(N, hashDev, spatialIndexDev);
 
-    // findCellStart<<<numBlocks, blockSize>>>(N, hashDev, spatialIndexDev);
+    // updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius, settings.dt);
+    updateDensitiesHash<<<numBlocks, blockSize>>>(N, dptr, densDev, hashDev, spatialIndexDev, settings.sRadius, settings.dt);
 
-    updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius, settings.dt);
-    // updateDensitiesHash<<<numBlocks, blockSize>>>(N, dptr, densDev, hashDev, spatialIndexDev, settings.sRadius, settings.dt);
-    fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, settings.dt, 
+    fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, hashDev, spatialIndexDev, settings.dt, 
                                           settings.sRadius, settings.targetDensity, settings.PressureMultiplier, 
                                           settings.gravity, settings.ViscosityStr, 
                                           settings.realXpos, settings.realYpos, settings.mouseAction);
