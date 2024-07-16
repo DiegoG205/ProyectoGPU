@@ -65,6 +65,8 @@ class FluidApp : public App {
     uint3 *hashDev;
     uint *spatialIndexDev;
 
+    int n_part;
+
     struct {
       float xmouse, ymouse;
       float realXpos, realYpos;
@@ -87,20 +89,20 @@ class FluidApp : public App {
     double time_diff = 0.0;
     unsigned int counter = 0;
 
-  FluidApp() : App(3, 3, 1000, 1000, "Fluid Simulation"), projection(1.0f) {
+  FluidApp(int n) : App(3, 3, 1000, 1000, "Fluid Simulation"), projection(1.0f), n_part(n) {
 
     // Crear datos partículas
 
-    std::size_t size = 2 * sizeof(float3) * N;
+    std::size_t size = 2 * sizeof(float3) * n_part;
 
     cudaMalloc(&auxDev, size);
-    cudaMalloc(&densDev, sizeof(float)*N);
-    cudaMalloc(&hashDev, sizeof(uint3)*N);
-    cudaMalloc(&spatialIndexDev, sizeof(uint)*N);
+    cudaMalloc(&densDev, sizeof(float)*n_part);
+    cudaMalloc(&hashDev, sizeof(uint3)*n_part);
+    cudaMalloc(&spatialIndexDev, sizeof(uint)*n_part);
 
     createData(auxDev);
 
-    particles = make_unique<CudaBuffer>(N);
+    particles = make_unique<CudaBuffer>(n_part);
     particles->build();
 
     vector<float> qv{20.0f,  20.0f,  0.0f, 1.0f, 1.0f, 1.0f,
@@ -163,25 +165,25 @@ class FluidApp : public App {
 
   void createData(float3 *auxDev) {
 
-    float3 aux[2*N];
+    // float3 aux[2*n_part];
 
-    int rowSize = (int)std::sqrt(N);
-    int colSize = (N - 1) / rowSize + 1;
+    vector<float3> aux(2*n_part);
+
+    int rowSize = (int)std::sqrt(n_part);
+    int colSize = (n_part - 1) / rowSize + 1;
     float size = 18.f;
 
     for (int i = 0; i < colSize; i++) {
       for(int j = 0; j < rowSize; j++) {
         int index = i*rowSize + j;
-        std::cout << index << "\n";
-        if (index >= N) break;
+        if (index >= n_part) break;
         aux[2*index].x = j * size/rowSize - size/2;
         aux[2*index].y = i * size/colSize - size/2;
         aux[2*index].z = 0;
         aux[2*index + 1] = {0,0,0};
       }
     }
-    //for(int i = 0; i < N; i++) std::cout << aux[2*i].x << " " << aux[2*i].y << " " << aux[2*i].z << "\n" << aux[2*i+1].x << " " << aux[2*i+1].y << " " << aux[2*i+1].z << "\n";
-    cudaMemcpy(auxDev, aux, 2*N*sizeof(float3), cudaMemcpyHostToDevice);
+    cudaMemcpy(auxDev, aux.data(), 2*n_part*sizeof(float3), cudaMemcpyHostToDevice);
   };
 
   void runCuda(struct cudaGraphicsResource **cudaVBOResourcePointer, float3 *auxDev) {
@@ -194,18 +196,18 @@ class FluidApp : public App {
     // Block size
     int blockSize = 64;
 
-    // Round up in case N is not a multiple of blockSize
-    int numBlocks = (N + blockSize - 1) / blockSize;
+    // Round up in case n_part is not a multiple of blockSize
+    int numBlocks = (n_part + blockSize - 1) / blockSize;
 
     // Execute the kernel
-    cudaMemcpy(dptr, auxDev, 2*N*sizeof(float3), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(dptr, auxDev, 2*n_part*sizeof(float3), cudaMemcpyDeviceToDevice);
 
     // Crear el hash
-    calcHash<<<numBlocks, blockSize>>>(N, dptr, hashDev, spatialIndexDev, settings.dt);
+    calcHash<<<numBlocks, blockSize>>>(n_part, dptr, hashDev, spatialIndexDev, settings.dt);
 
     // Hacer el sort 
     int k,j;
-    for (k = 2; k <= N; k <<=1) {
+    for (k = 2; k <= n_part; k <<=1) {
       for (j = k>>1; j>0; j=j>>1) {
         bitonicSortStep<<<numBlocks, blockSize>>>(hashDev, j, k);
       }
@@ -213,12 +215,11 @@ class FluidApp : public App {
     
     // Rellenar los spatialIndex
     // En el arreglo spatialIndexDev, quedara en la posicion k la posicion en hashDev donde empieza la celda con key k
-    findCellStart<<<numBlocks, blockSize>>>(N, hashDev, spatialIndexDev);
+    findCellStart<<<numBlocks, blockSize>>>(n_part, hashDev, spatialIndexDev);
 
-    // updateDensities<<<numBlocks, blockSize>>>(N, dptr, densDev, settings.sRadius, settings.dt);
-    updateDensitiesHash<<<numBlocks, blockSize>>>(N, dptr, densDev, hashDev, spatialIndexDev, settings.sRadius, settings.dt);
+    updateDensitiesHash<<<numBlocks, blockSize>>>(n_part, dptr, densDev, hashDev, spatialIndexDev, settings.sRadius, settings.dt);
 
-    fluid_kernel<<<numBlocks, blockSize>>>(N, dptr, auxDev, densDev, hashDev, spatialIndexDev, settings.dt, 
+    fluid_kernel<<<numBlocks, blockSize>>>(n_part, dptr, auxDev, densDev, hashDev, spatialIndexDev, settings.dt, 
                                           settings.sRadius, settings.targetDensity, settings.PressureMultiplier, 
                                           settings.gravity, settings.ViscosityStr, 
                                           settings.realXpos, settings.realYpos, settings.mouseAction);
@@ -233,14 +234,13 @@ class FluidApp : public App {
                                        ImGuiWindowFlags_NoSavedSettings;
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(ImVec2(viewport->Size.x/3, viewport->Size.y/3));
+    ImGui::SetNextWindowSize(ImVec2(3 * viewport->Size.x /7, viewport->Size.y/3));
     if (ImGui::Begin("Opciones", NULL, flags)) {
       ImGui::Text("Opciones");
       ImGui::SliderFloat("Target Density", &settings.targetDensity, 0, 5.f);
       ImGui::SliderFloat("Pressure Multiplier", &settings.PressureMultiplier, 0, 2.f);
       ImGui::SliderFloat("Viscosity", &settings.ViscosityStr, 0, 1.f);
       ImGui::SliderFloat("Gravity", &settings.gravity, 0, 50.f);
-      ImGui::SliderFloat("Smoothing Radius", &settings.sRadius, 1.f, 4.f);
       ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.05f);
       ImGui::Checkbox("Stop", &settings.stop);
     }
@@ -291,35 +291,12 @@ class FluidApp : public App {
       settings.mouseAction = 1;
 
       update_real_mouse_pos();
-
-      float3 p = {settings.realXpos, settings.realYpos, 0};
-      float3 *dptr;
-      size_t numBytes;
-      cudaGraphicsMapResources(1, &(particles->VBO), 0);
-      cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *&(particles->VBO));
-      
-      float3 auxP[2*N];
-      cudaMemcpy(auxP, dptr, 2*N*sizeof(float3), cudaMemcpyDeviceToHost);
-      //for (int i = 0; i < N; i++) std::cout << auxP[i].x << " " << auxP[i].y << " " << auxP[i].z << "\n";
-      float res = calculateDensityHost(N, p, auxP, settings.sRadius);
-      std::cout << res << "\n";
-      cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
     }
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
       settings.mouseAction = 0;
     }
     if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
       settings.mouseAction = -1;
-      // from viewport to world
-      // float3 *dptr;
-      // size_t numBytes;
-      // cudaGraphicsMapResources(1, &(particles->VBO), 0);
-      // cudaGraphicsResourceGetMappedPointer((void**) &dptr, &numBytes, *&(particles->VBO));
-      
-      // float3 auxP[2*N];
-      // cudaMemcpy(auxP, dptr, 2*N*sizeof(float3), cudaMemcpyDeviceToHost);
-      // for (int i = 0; i < N; i++) std::cout << i << ": " << auxP[2*i].x << " " << auxP[2*i].y << " " << auxP[2*i].z << "\n";
-      // cudaGraphicsUnmapResources(1, &(particles->VBO), 0);
     }
     if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_RELEASE) {
       settings.mouseAction = 0;
@@ -336,8 +313,30 @@ class FluidApp : public App {
   }
 };
 
-int main() {
-  FluidApp app;
-  app.run();
+int main(int argc, char* argv[]) {
+  if (argc == 1) {
+    FluidApp app(N);
+    app.run();
+  }
+  else if (argc == 2) {
+    int n = std::atoi(argv[1]);
+
+    if (n <= 0) {
+      std::cerr << "Particle count must be positive\n";
+      return 2;
+    }
+
+    if (!((n & (n - 1)) == 0)) {
+      std::cerr << "Particle count must be a power of 2\n";
+      return 3;
+    }
+
+    FluidApp app(n);
+    app.run();
+  }
+  else {
+    std::cerr << "Use: fluidsim.exe <particle_count (optional)>\n";
+    return 1;
+  }
   return 0;
 }

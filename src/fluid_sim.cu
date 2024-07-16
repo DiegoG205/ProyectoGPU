@@ -50,6 +50,34 @@ cada celda tiene su hash
 Tengo una particula
 Obtengo la celda en la que esta la particula
 Loop solo considerando las particulas en la misma celda o las celdas vecinas
+
+
+[0, 1, 2, 3] Particulas
+0: 0,0 -> 17 hash -> 1 key
+1: 1,0 -> 43 hash -> 3 key
+2: 0,3 -> 2  hash -> 2 key
+3: 0,0 -> 17 hash -> 1 key
+
+[(17, 0, 1), (43, 1, 3), (2, 2, 2), (17, 3, 1)] Hash[(hash, index, key)]
+
+
+Bitonic sort segun key
+
+
+[(17, 0, 1), (17, 3, 1), (2, 2 ,2), (43, 1, 3)] Hash ordenado
+
+[UINT_MAX, 0, 2, 3] Spatial index
+
+Calculamos para particula 0:
+0 -> celda 0,0 -> 17 hash -> 1 key 
+
+spatialIndex[key] -> spatialIndex[1] -> 0 = posicion del hash desde donde hay que revisar
+
+Hash[0] = (17, 0, 1) es la key correcta -> hacemos calculos
+Hash[1] = (17, 3, 1) es la key correcta -> hacemos calculos
+Hash[2] = (2, 2, 2) no es la key correcta -> Nos salimos de la celda -> terminamos
+
+Repetir para celdas adyacentes
 */
 
 
@@ -182,12 +210,6 @@ __device__ float calculateDensityHash(int n, float3 pos, float3* positions, uint
         if (atData.z != key){
           break;
         }
-        
-        // Si el hash es distinto, es una celda con choque, pero
-        // tenemos que seguir revisando
-        // if (atData.x != hash) {
-        //   continue;
-        // }
 
         uint index = atData.y;
         float3 other = positions[2*index];
