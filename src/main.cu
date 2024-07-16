@@ -234,14 +234,14 @@ class FluidApp : public App {
                                        ImGuiWindowFlags_NoSavedSettings;
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(ImVec2(3 * viewport->Size.x /7, viewport->Size.y/3));
+    ImGui::SetNextWindowSize(ImVec2(3 * viewport->Size.x /7, viewport->Size.y/4));
     if (ImGui::Begin("Opciones", NULL, flags)) {
       ImGui::Text("Opciones");
       ImGui::SliderFloat("Target Density", &settings.targetDensity, 0, 5.f);
       ImGui::SliderFloat("Pressure Multiplier", &settings.PressureMultiplier, 0, 2.f);
       ImGui::SliderFloat("Viscosity", &settings.ViscosityStr, 0, 1.f);
-      ImGui::SliderFloat("Gravity", &settings.gravity, 0, 50.f);
-      ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.05f);
+      ImGui::SliderFloat("Gravity", &settings.gravity, 0, 20.f);
+      ImGui::SliderFloat("Delta Time", &settings.dt, 0, 0.02f);
       ImGui::Checkbox("Stop", &settings.stop);
     }
     ImGui::End();
@@ -321,8 +321,8 @@ int main(int argc, char* argv[]) {
   else if (argc == 2) {
     int n = std::atoi(argv[1]);
 
-    if (n <= 0) {
-      std::cerr << "Particle count must be positive\n";
+    if (n < 64) {
+      std::cerr << "Particle count must be bigger or equal than 64\n";
       return 2;
     }
 
